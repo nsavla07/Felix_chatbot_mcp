@@ -1,0 +1,7 @@
+streamlit
+mcp[cli]
+requests
+openai
+pymongo[srv]
+dnspython
+python-dotenv
