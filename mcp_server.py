@@ -11,15 +11,6 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 import uuid
 import os
-import json
-import logging
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
-log = logging.getLogger("felix-mcp")
 
 # Load .env so MONGO_URI is available
 load_dotenv()
@@ -49,17 +40,14 @@ def _get_db():
     Return the 'chatbot' database (matches your existing db.js setup).
     Creates the MongoClient once and reuses it.
     """
+    print(">>> _get_db START")
     global _mongo_client
     if _mongo_client is None:
-        log.info("[MongoDB] Connecting to: %s", _state["mongo_uri"][:40] + "...")
-        try:
-            _mongo_client = MongoClient(_state["mongo_uri"], serverSelectionTimeoutMS=5000)
-            # Test the connection
-            _mongo_client.admin.command("ping")
-            log.info("[MongoDB] Connection successful")
-        except Exception as exc:
-            log.error("[MongoDB] Connection FAILED: %s", exc)
-            raise
+        print("  Connecting to MongoDB...")
+        _mongo_client = MongoClient(_state["mongo_uri"], serverSelectionTimeoutMS=5000)
+        _mongo_client.admin.command("ping")
+        print("  MongoDB connected!")
+    print("<<< _get_db END")
     return _mongo_client["chatbot"]
 
 
@@ -75,7 +63,9 @@ def set_auth_token(token: str) -> str:
     Args:
         token: The JWT Bearer token (without the 'Bearer ' prefix)
     """
+    print(">>> set_auth_token START")
     _state["auth_token"] = token
+    print("<<< set_auth_token END")
     return "Auth token updated."
 
 
@@ -86,9 +76,11 @@ def set_mongo_uri(uri: str) -> str:
     Args:
         uri: Full MongoDB connection string (e.g. mongodb://localhost:27017)
     """
+    print(">>> set_mongo_uri START")
     global _mongo_client
     _state["mongo_uri"] = uri
     _mongo_client = None          # force reconnect on next call
+    print("<<< set_mongo_uri END")
     return "MongoDB URI updated."
 
 
@@ -104,7 +96,7 @@ def create_chat_session(user_name: str = "Guest") -> dict:
     Args:
         user_name: Display name for the user
     """
-    log.info("[create_chat_session] Creating session for user: %s", user_name)
+    print(">>> create_chat_session START")
     db = _get_db()
     session_id = str(uuid.uuid4())
     db.chat_sessions.insert_one({
@@ -113,7 +105,7 @@ def create_chat_session(user_name: str = "Guest") -> dict:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "messages": [],
     })
-    log.info("[create_chat_session] Created session: %s", session_id)
+    print("<<< create_chat_session END")
     return {"session_id": session_id, "user_name": user_name}
 
 
@@ -130,7 +122,7 @@ def save_chat_message(
         role: Who sent the message — 'user' or 'assistant'
         content: The message text
     """
-    log.info("[save_chat_message] Saving %s message to session %s (%d chars)", role, session_id[:8], len(content))
+    print(">>> save_chat_message START")
     db = _get_db()
     message = {
         "role": role,
@@ -142,9 +134,9 @@ def save_chat_message(
         {"$push": {"messages": message}},
     )
     if result.matched_count == 0:
-        log.warning("[save_chat_message] Session %s not found", session_id[:8])
+        print("<<< save_chat_message END (session not found)")
         return {"error": "Session not found"}
-    log.info("[save_chat_message] Saved successfully")
+    print("<<< save_chat_message END")
     return {"status": "saved"}
 
 
@@ -156,13 +148,16 @@ def get_chat_history(session_id: str, limit: int = 50) -> dict:
         session_id: The chat session ID
         limit: Max number of recent messages to return
     """
+    print(">>> get_chat_history START")
     db = _get_db()
     session = db.chat_sessions.find_one(
         {"session_id": session_id}, {"_id": 0}
     )
     if not session:
+        print("<<< get_chat_history END (session not found)")
         return {"error": "Session not found"}
     messages = session.get("messages", [])[-limit:]
+    print("<<< get_chat_history END")
     return {
         "session_id": session_id,
         "user_name": session.get("user_name", ""),
@@ -177,8 +172,9 @@ def list_chat_sessions(limit: int = 20) -> list:
     Args:
         limit: Max number of sessions to return
     """
+    print(">>> list_chat_sessions START")
     db = _get_db()
-    return list(
+    result = list(
         db.chat_sessions.find(
             {},
             {"_id": 0, "session_id": 1, "user_name": 1, "created_at": 1},
@@ -186,6 +182,8 @@ def list_chat_sessions(limit: int = 20) -> list:
         .sort("created_at", -1)
         .limit(limit)
     )
+    print("<<< list_chat_sessions END")
+    return result
 
 
 @mcp.tool()
@@ -196,13 +194,16 @@ def rename_chat_session(session_id: str, name: str) -> dict:
         session_id: The chat session ID
         name: New display name for the session
     """
+    print(">>> rename_chat_session START")
     db = _get_db()
     result = db.chat_sessions.update_one(
         {"session_id": session_id},
         {"$set": {"user_name": name}},
     )
     if result.matched_count == 0:
+        print("<<< rename_chat_session END (session not found)")
         return {"error": "Session not found"}
+    print("<<< rename_chat_session END")
     return {"status": "renamed", "name": name}
 
 
@@ -213,10 +214,13 @@ def delete_chat_session(session_id: str) -> dict:
     Args:
         session_id: The chat session ID to delete
     """
+    print(">>> delete_chat_session START")
     db = _get_db()
     result = db.chat_sessions.delete_one({"session_id": session_id})
     if result.deleted_count == 0:
+        print("<<< delete_chat_session END (session not found)")
         return {"error": "Session not found"}
+    print("<<< delete_chat_session END")
     return {"status": "deleted"}
 
 
@@ -227,15 +231,14 @@ def delete_chat_session(session_id: str) -> dict:
 
 def _felix_headers() -> dict:
     """Build common headers for Felix API calls."""
+    print(">>> _felix_headers START")
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
     }
     if _state["auth_token"]:
         headers["Authorization"] = f"Bearer {_state['auth_token']}"
-        log.info("[_felix_headers] Auth token set (length=%d)", len(_state["auth_token"]))
-    else:
-        log.warning("[_felix_headers] No auth token set!")
+    print("<<< _felix_headers END")
     return headers
 
 
@@ -280,6 +283,7 @@ def recommend_portfolio(
         include_allocation: Whether to include fund-wise allocation amounts
         free_think: Allow the AI to think freely beyond the template
     """
+    print(">>> recommend_portfolio START")
     prompt = (
         f"Client Name: {client_name}\n"
         f"        Age: {age} years old\n"
@@ -308,15 +312,10 @@ def recommend_portfolio(
     }
 
     url = f"{_state['base_url']}/api/recommend-portfolio"
-    log.info("[recommend_portfolio] POST %s — client=%s, amount=%.0f, type=%s", url, client_name, investment_amount, investment_type)
-    log.info("[recommend_portfolio] Payload: %s", json.dumps(payload, default=str)[:300])
     resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
-    log.info("[recommend_portfolio] Response status: %d", resp.status_code)
-    if resp.status_code != 200:
-        log.error("[recommend_portfolio] Response body: %s", resp.text[:500])
     resp.raise_for_status()
     data = resp.json()
-    log.info("[recommend_portfolio] SUCCESS — response keys: %s", list(data.keys()) if isinstance(data, dict) else "not a dict")
+    print("<<< recommend_portfolio END")
     return data
 
 
@@ -343,6 +342,7 @@ def recommend_portfolio_goal_based(
         apply_inflation: Whether to adjust the target for inflation
         prompt: Additional context or goal description
     """
+    print(">>> recommend_portfolio_goal_based START")
     payload = {
         "name": client_name,
         "target_amount": target_amount,
@@ -355,21 +355,17 @@ def recommend_portfolio_goal_based(
     }
 
     url = f"{_state['base_url']}/api/recommend-portfolio-goal-based"
-    log.info("[recommend_portfolio_goal_based] POST %s — client=%s, target=%.0f, years=%d", url, client_name, target_amount, years)
-    log.info("[recommend_portfolio_goal_based] Payload: %s", json.dumps(payload, default=str)[:300])
     resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
-    log.info("[recommend_portfolio_goal_based] Response status: %d", resp.status_code)
-    if resp.status_code != 200:
-        log.error("[recommend_portfolio_goal_based] Response body: %s", resp.text[:500])
     resp.raise_for_status()
     data = resp.json()
-    log.info("[recommend_portfolio_goal_based] SUCCESS — response keys: %s", list(data.keys()) if isinstance(data, dict) else "not a dict")
+    print("<<< recommend_portfolio_goal_based END")
     return data
 
 
 @mcp.tool()
 def get_tool_schemas() -> list[dict]:
     """Return the parameter schemas for all portfolio tools."""
+    print(">>> get_tool_schemas START")
     tools_info = []
     for tool_name, tool_obj in mcp._tool_manager._tools.items():
         if tool_name == "get_tool_schemas":
@@ -379,6 +375,7 @@ def get_tool_schemas() -> list[dict]:
             "description": tool_obj.description,
             "parameters": tool_obj.parameters,
         })
+    print("<<< get_tool_schemas END")
     return tools_info
 
 
