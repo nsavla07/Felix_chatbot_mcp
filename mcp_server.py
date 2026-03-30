@@ -312,11 +312,16 @@ def recommend_portfolio(
     }
 
     url = f"{_state['base_url']}/api/recommend-portfolio"
-    resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
-    print("<<< recommend_portfolio END")
-    return data
+    print(">>> recommend_portfolio calling API")
+    try:
+        resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
+    except Exception as e:
+        print("<<< recommend_portfolio END (request failed)")
+        return {"error": f"Request failed: {e}"}
+    print(f"<<< recommend_portfolio END (status {resp.status_code})")
+    if resp.status_code != 200:
+        return {"error": f"API returned {resp.status_code}", "detail": resp.text[:500]}
+    return resp.json()
 
 
 @mcp.tool()
@@ -355,11 +360,16 @@ def recommend_portfolio_goal_based(
     }
 
     url = f"{_state['base_url']}/api/recommend-portfolio-goal-based"
-    resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
-    resp.raise_for_status()
-    data = resp.json()
-    print("<<< recommend_portfolio_goal_based END")
-    return data
+    print(">>> recommend_portfolio_goal_based calling API")
+    try:
+        resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
+    except Exception as e:
+        print("<<< recommend_portfolio_goal_based END (request failed)")
+        return {"error": f"Request failed: {e}"}
+    print(f"<<< recommend_portfolio_goal_based END (status {resp.status_code})")
+    if resp.status_code != 200:
+        return {"error": f"API returned {resp.status_code}", "detail": resp.text[:500]}
+    return resp.json()
 
 
 @mcp.tool()
