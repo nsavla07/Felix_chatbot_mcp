@@ -11,6 +11,15 @@ from datetime import datetime, timezone
 from dotenv import load_dotenv
 import uuid
 import os
+import json
+import logging
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+)
+log = logging.getLogger("felix-mcp")
 
 # Load .env so MONGO_URI is available
 load_dotenv()
@@ -42,7 +51,15 @@ def _get_db():
     """
     global _mongo_client
     if _mongo_client is None:
-        _mongo_client = MongoClient(_state["mongo_uri"])
+        log.info("[MongoDB] Connecting to: %s", _state["mongo_uri"][:40] + "...")
+        try:
+            _mongo_client = MongoClient(_state["mongo_uri"], serverSelectionTimeoutMS=5000)
+            # Test the connection
+            _mongo_client.admin.command("ping")
+            log.info("[MongoDB] Connection successful")
+        except Exception as exc:
+            log.error("[MongoDB] Connection FAILED: %s", exc)
+            raise
     return _mongo_client["chatbot"]
 
 
@@ -87,6 +104,7 @@ def create_chat_session(user_name: str = "Guest") -> dict:
     Args:
         user_name: Display name for the user
     """
+    log.info("[create_chat_session] Creating session for user: %s", user_name)
     db = _get_db()
     session_id = str(uuid.uuid4())
     db.chat_sessions.insert_one({
@@ -95,6 +113,7 @@ def create_chat_session(user_name: str = "Guest") -> dict:
         "created_at": datetime.now(timezone.utc).isoformat(),
         "messages": [],
     })
+    log.info("[create_chat_session] Created session: %s", session_id)
     return {"session_id": session_id, "user_name": user_name}
 
 
@@ -111,6 +130,7 @@ def save_chat_message(
         role: Who sent the message — 'user' or 'assistant'
         content: The message text
     """
+    log.info("[save_chat_message] Saving %s message to session %s (%d chars)", role, session_id[:8], len(content))
     db = _get_db()
     message = {
         "role": role,
@@ -122,7 +142,9 @@ def save_chat_message(
         {"$push": {"messages": message}},
     )
     if result.matched_count == 0:
+        log.warning("[save_chat_message] Session %s not found", session_id[:8])
         return {"error": "Session not found"}
+    log.info("[save_chat_message] Saved successfully")
     return {"status": "saved"}
 
 
@@ -211,6 +233,9 @@ def _felix_headers() -> dict:
     }
     if _state["auth_token"]:
         headers["Authorization"] = f"Bearer {_state['auth_token']}"
+        log.info("[_felix_headers] Auth token set (length=%d)", len(_state["auth_token"]))
+    else:
+        log.warning("[_felix_headers] No auth token set!")
     return headers
 
 
@@ -283,9 +308,16 @@ def recommend_portfolio(
     }
 
     url = f"{_state['base_url']}/api/recommend-portfolio"
+    log.info("[recommend_portfolio] POST %s — client=%s, amount=%.0f, type=%s", url, client_name, investment_amount, investment_type)
+    log.info("[recommend_portfolio] Payload: %s", json.dumps(payload, default=str)[:300])
     resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
+    log.info("[recommend_portfolio] Response status: %d", resp.status_code)
+    if resp.status_code != 200:
+        log.error("[recommend_portfolio] Response body: %s", resp.text[:500])
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    log.info("[recommend_portfolio] SUCCESS — response keys: %s", list(data.keys()) if isinstance(data, dict) else "not a dict")
+    return data
 
 
 @mcp.tool()
@@ -323,9 +355,16 @@ def recommend_portfolio_goal_based(
     }
 
     url = f"{_state['base_url']}/api/recommend-portfolio-goal-based"
+    log.info("[recommend_portfolio_goal_based] POST %s — client=%s, target=%.0f, years=%d", url, client_name, target_amount, years)
+    log.info("[recommend_portfolio_goal_based] Payload: %s", json.dumps(payload, default=str)[:300])
     resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
+    log.info("[recommend_portfolio_goal_based] Response status: %d", resp.status_code)
+    if resp.status_code != 200:
+        log.error("[recommend_portfolio_goal_based] Response body: %s", resp.text[:500])
     resp.raise_for_status()
-    return resp.json()
+    data = resp.json()
+    log.info("[recommend_portfolio_goal_based] SUCCESS — response keys: %s", list(data.keys()) if isinstance(data, dict) else "not a dict")
+    return data
 
 
 @mcp.tool()
