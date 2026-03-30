@@ -20,7 +20,7 @@ mcp = FastMCP("Felix Portfolio Advisor")
 # Shared state — tokens and connection strings
 # Reads MONGO_URI from .env file (your Atlas connection string)
 _state = {
-    "auth_token": "",
+    "auth_token": os.getenv("AUTH_TOKEN", ""),
     "base_url": "https://felix.investica.com",
     "mongo_uri": os.getenv(
         "MONGO_URI",
@@ -257,6 +257,7 @@ def recommend_portfolio(
     dependents: Literal["0", "1-2", "3-4", "5+"],
     tax_bracket: Literal["0-5%", "5-20%", "20-30%", "Above 30%"],
     investment_amount: float,
+    auth_token: str = "",
     rate_of_return: float = 12.0,
     additional_notes: str = "",
     include_allocation: bool = True,
@@ -278,6 +279,7 @@ def recommend_portfolio(
         dependents: Number of dependents
         tax_bracket: Tax bracket percentage
         investment_amount: Total amount to invest in INR
+        auth_token: JWT Bearer token for Felix API authentication
         rate_of_return: Expected annual rate of return in percent
         additional_notes: Any extra context or preferences from the client
         include_allocation: Whether to include fund-wise allocation amounts
@@ -312,9 +314,13 @@ def recommend_portfolio(
     }
 
     url = f"{_state['base_url']}/api/recommend-portfolio"
+    headers = _felix_headers()
+    token = auth_token or _state["auth_token"]
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     print(">>> recommend_portfolio calling API")
     try:
-        resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
+        resp = requests.post(url, json=payload, headers=headers, timeout=120)
     except Exception as e:
         print("<<< recommend_portfolio END (request failed)")
         return {"error": f"Request failed: {e}"}
@@ -331,6 +337,7 @@ def recommend_portfolio_goal_based(
     years: int,
     risk_appetite: Literal["Conservative", "Moderate", "Aggressive"],
     investment_type: Literal["SIP", "Lumpsum"] = "SIP",
+    auth_token: str = "",
     rate_of_return: float = 12.0,
     apply_inflation: bool = True,
     prompt: str = "",
@@ -343,6 +350,7 @@ def recommend_portfolio_goal_based(
         years: Number of years to achieve the goal
         risk_appetite: Risk tolerance level
         investment_type: Monthly SIP or one-time Lumpsum
+        auth_token: JWT Bearer token for Felix API authentication
         rate_of_return: Expected annual return percentage
         apply_inflation: Whether to adjust the target for inflation
         prompt: Additional context or goal description
@@ -360,9 +368,13 @@ def recommend_portfolio_goal_based(
     }
 
     url = f"{_state['base_url']}/api/recommend-portfolio-goal-based"
+    headers = _felix_headers()
+    token = auth_token or _state["auth_token"]
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
     print(">>> recommend_portfolio_goal_based calling API")
     try:
-        resp = requests.post(url, json=payload, headers=_felix_headers(), timeout=120)
+        resp = requests.post(url, json=payload, headers=headers, timeout=120)
     except Exception as e:
         print("<<< recommend_portfolio_goal_based END (request failed)")
         return {"error": f"Request failed: {e}"}
